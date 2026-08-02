@@ -44,3 +44,15 @@ py_test(
     srcs = ["genMetrics_test.py"],
     deps = [":genMetrics_lib"],
 )
+
+py_library(
+    name = "genSummary_lib",
+    srcs = ["genSummary.py"],
+    imports = ["."],
+)
+
+py_test(
+    name = "genSummary_test",
+    srcs = ["genSummary_test.py"],
+    deps = [":genSummary_lib"],
+)

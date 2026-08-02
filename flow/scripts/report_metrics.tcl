@@ -33,6 +33,8 @@ proc report_metrics { stage when { include_erc true } { include_clock_skew true 
   report_worst_slack_metric
   report_worst_slack_metric -hold
 
+  utl::metric_int "timing__path__endpoint__count" [sta::endpoint_count]
+
   report_puts "\n=========================================================================="
   report_puts "$when report_clock_min_period"
   report_puts "--------------------------------------------------------------------------"

@@ -25,6 +25,17 @@ metadata-check:
 	    -r $(RULES_JSON) 2>&1 \
 	    | tee $(abspath $(REPORTS_DIR)/metadata-check.log)
 
+.PHONY: metadata-summary
+metadata-summary:
+	$(PYTHON_EXE) $(UTILS_DIR)/genSummary.py \
+		--metadata $(REPORTS_DIR)/metadata.json \
+		--logs $(LOG_DIR) \
+		--cores $(NUM_CORES) \
+		--platform $(PLATFORM) \
+		--design $(DESIGN_NICKNAME) \
+		--variant $(FLOW_VARIANT) \
+		--output $(REPORTS_DIR)/metadata-summary.json
+
 .PHONY: clean_metadata
 clean_metadata:
 	rm -f $(REPORTS_DIR)/design-dir.txt
