@@ -25,6 +25,26 @@ metadata-check:
 	    -r $(RULES_JSON) 2>&1 \
 	    | tee $(abspath $(REPORTS_DIR)/metadata-check.log)
 
+.PHONY: metadata-summary
+# GENSUMMARY_FINAL_STAGE = the stage this flow was ASKED to reach, e.g.
+# `globalroute` for a campaign that deliberately stops before routing. genSummary.py
+# already reads it from the environment, and GNU make exports command-line
+# variables to recipes, so both spellings reached it before this line existed --
+# forwarding it is about VISIBILITY, not plumbing. Nothing in this recipe used to
+# suggest the endpoint was configurable at all, and a 3120-run campaign was
+# summarized against the wrong one. Unset stays unset: genSummary.py owns the
+# default, and warns loudly when the choice looks unintended.
+metadata-summary:
+	$(PYTHON_EXE) $(UTILS_DIR)/genSummary.py \
+		--metadata $(REPORTS_DIR)/metadata.json \
+		--logs $(LOG_DIR) \
+		--cores $(NUM_CORES) \
+		--platform $(PLATFORM) \
+		--design $(DESIGN_NICKNAME) \
+		--variant $(FLOW_VARIANT) \
+		$(if $(GENSUMMARY_FINAL_STAGE),--final-stage $(GENSUMMARY_FINAL_STAGE)) \
+		--output $(REPORTS_DIR)/metadata-summary.json
+
 .PHONY: clean_metadata
 clean_metadata:
 	rm -f $(REPORTS_DIR)/design-dir.txt

@@ -14,7 +14,23 @@ proc global_route_helper { } {
   set use_cugr ""
   append_env_var use_cugr GLOBAL_ROUTE_USE_CUGR -use_cugr 0
 
-  proc do_global_route { res_aware use_cugr } {
+  # Congestion is a GATE by default: a design that global routing cannot make
+  # congestion-free ends the stage with an error -- GRT-0116 from the batch route
+  # below, GRT-0232 from the -end_incremental calls further down -- so the run
+  # never reaches `report_metrics 5 "global route"` and produces no global-route
+  # QoR at all. GLOBAL_ROUTE_ALLOW_CONGESTION=1 downgrades both to warnings so the
+  # stage completes with its congestion measured (for studies that need to measure
+  # congestion rather than gate on it).
+  #
+  # It has to be repeated on EVERY global_route invocation, not just the first:
+  # OpenROAD's global_route command runs `grt::set_allow_congestion` unconditionally
+  # on each call (src/grt/src/GlobalRouter.tcl), so an -end_incremental call without
+  # the flag RESETS it back to false. -use_cugr is explicitly preserved across the
+  # incremental bracket there; -allow_congestion is not.
+  set allow_cong ""
+  append_env_var allow_cong GLOBAL_ROUTE_ALLOW_CONGESTION -allow_congestion 0
+
+  proc do_global_route { res_aware use_cugr allow_cong } {
     # CUGR runs a full 3D maze pass per iteration; use a tighter default.
     set cong_iters "-congestion_iterations 30"
     if { $use_cugr ne "" } {
@@ -22,7 +38,7 @@ proc global_route_helper { } {
     }
     set all_args [concat [list \
       -congestion_report_file $::global_route_congestion_report] \
-      $cong_iters $::env(GLOBAL_ROUTE_ARGS) {*}$res_aware {*}$use_cugr]
+      $cong_iters $::env(GLOBAL_ROUTE_ARGS) {*}$res_aware {*}$use_cugr {*}$allow_cong]
 
     log_cmd global_route {*}$all_args
   }
@@ -33,7 +49,7 @@ proc global_route_helper { } {
 
   log_cmd pin_access {*}$additional_args
 
-  set result [catch { do_global_route $res_aware $use_cugr } errMsg]
+  set result [catch { do_global_route $res_aware $use_cugr $allow_cong } errMsg]
 
   if { $result != 0 } {
     if { !$::env(GENERATE_ARTIFACTS_ON_FAILURE) } {
@@ -72,7 +88,7 @@ proc global_route_helper { } {
     log_cmd global_route -start_incremental
     log_cmd detailed_placement
     # Route only the modified net by DPL
-    log_cmd global_route -end_incremental {*}$res_aware \
+    log_cmd global_route -end_incremental {*}$res_aware {*}$allow_cong \
       -congestion_report_file $::env(REPORTS_DIR)/congestion_post_repair_design.rpt
 
     # Repair timing using global route parasitics
@@ -89,7 +105,7 @@ proc global_route_helper { } {
     log_cmd detailed_placement
     log_cmd check_placement -verbose
     # Route only the modified net by DPL
-    log_cmd global_route -end_incremental {*}$res_aware \
+    log_cmd global_route -end_incremental {*}$res_aware {*}$allow_cong \
       -congestion_report_file $::env(REPORTS_DIR)/congestion_post_repair_timing.rpt
 
     log_cmd estimate_parasitics -global_routing
@@ -115,7 +131,7 @@ proc global_route_helper { } {
     log_cmd global_route -start_incremental
     recover_power_helper
     # Route the modified nets by rsz journal restore
-    log_cmd global_route -end_incremental {*}$res_aware \
+    log_cmd global_route -end_incremental {*}$res_aware {*}$allow_cong \
       -congestion_report_file $::env(REPORTS_DIR)/congestion_post_recover_power.rpt
   }
 
