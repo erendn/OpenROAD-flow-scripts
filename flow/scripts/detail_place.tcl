@@ -38,6 +38,14 @@ if { $result != 0 } {
   error $errMsg
 }
 
+# A global sizing experiment, when one is selected, runs here: after detailed
+# placement and before the metrics, so the detailed-placement metrics record
+# the design after sizing (see global_sizing_experiment.tcl).
+if { [env_var_exists_and_non_empty EXPERIMENT_SETTING] } {
+  source $::env(SCRIPTS_DIR)/global_sizing_experiment.tcl
+  run_global_sizing_experiment $::env(EXPERIMENT_SETTING)
+}
+
 report_metrics 3 "detailed place" true false
 
 source_step_tcl POST DETAIL_PLACE

@@ -29,7 +29,50 @@ if { $::env(ENABLE_PLACE_REPAIR_TIMING) } {
   puts "Repair setup and hold violations..."
   log_cmd estimate_parasitics -placement
 
+  # Wall time of THIS repair_timing call, as a metric so it lands per run in
+  # metadata-summary.json. It is an in-tool timer: the stage's own
+  # elapsed_seconds also covers repair_design, the parasitics estimates and the
+  # reports, and the whole-flow total is dominated by host load. cts.tcl and
+  # global_route.tcl call the same helper and are deliberately NOT timed -- they
+  # do identical downstream work whatever this call did, so timing them would add
+  # noise, not signal. Emitted for every run that reaches this call, whatever
+  # sizing configuration it uses, so a default run is timed exactly the same way
+  # as one with global sizing. (The enclosing ENABLE_PLACE_REPAIR_TIMING gate is
+  # no exception to that -- when it is 0 there is no call here to time at all.)
+  #
+  # The metric name must NOT end in `__elapsed_seconds`: genSummary derives the
+  # flow's stage list from every key carrying that suffix, so such a name would
+  # mint a bogus stage. `clock` is auto-loaded from TCL_LIBRARY and is not
+  # guaranteed in a hermetic environment (the same caveat log_cmd carries), so a
+  # missing `clock` costs the metric rather than erroring the stage. Tcl exposes
+  # no monotonic clock, so a wall-clock step mid-call lands in the value verbatim;
+  # left unclamped deliberately -- an obviously bogus number is easier to notice
+  # and drop than a plausible 0 manufactured to hide one.
+  set has_clock [expr { [info commands clock] ne "" }]
+  if { $has_clock } {
+    set repair_timing_start_ms [clock milliseconds]
+  }
+
   repair_timing_helper
+
+  if { $has_clock } {
+    utl::metric_float "repair_timing__wall_seconds" \
+      [expr { ([clock milliseconds] - $repair_timing_start_ms) / 1000.0 }]
+  }
+}
+
+# The machine that RAN THE FLOW. genSummary may summarize somewhere else entirely
+# (for example on run directories copied off cloud machines), so its own hostname
+# answers a different question; captured here it is unambiguous. Best-effort
+# provenance, for grouping runtimes by machine afterwards.
+#
+# OPT-IN, and it has to be: a metric emitted here reaches metadata.json, so an
+# always-on hostname would be written into every regenerated metadata golden --
+# committing contributor machine names and churning the goldens for everyone. With
+# it off, genSummary falls back to its own hostname and stamps host.source
+# "gensummary" instead of "flow", so the ambiguity stays visible rather than hidden.
+if { $::env(RECORD_FLOW_HOST) } {
+  utl::metric "host" [info hostname]
 }
 
 # post report

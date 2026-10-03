@@ -25,6 +25,26 @@ metadata-check:
 	    -r $(RULES_JSON) 2>&1 \
 	    | tee $(abspath $(REPORTS_DIR)/metadata-check.log)
 
+.PHONY: metadata-summary
+# GENSUMMARY_FINAL_STAGE = the stage this flow was ASKED to reach, e.g.
+# `globalroute` for a flow that deliberately stops before detailed routing.
+# genSummary.py already reads it from the environment, and GNU make exports
+# command-line variables to recipes, so forwarding it here is about VISIBILITY,
+# not plumbing: the recipe shows that the endpoint is configurable. Runs
+# summarized against the wrong endpoint are all recorded as errored. Unset stays
+# unset: genSummary.py owns the default, and warns loudly when the choice looks
+# unintended.
+metadata-summary:
+	$(PYTHON_EXE) $(UTILS_DIR)/genSummary.py \
+		--metadata $(REPORTS_DIR)/metadata.json \
+		--logs $(LOG_DIR) \
+		--cores $(NUM_CORES) \
+		--platform $(PLATFORM) \
+		--design $(DESIGN_NICKNAME) \
+		--variant $(FLOW_VARIANT) \
+		$(if $(GENSUMMARY_FINAL_STAGE),--final-stage $(GENSUMMARY_FINAL_STAGE)) \
+		--output $(REPORTS_DIR)/metadata-summary.json
+
 .PHONY: clean_metadata
 clean_metadata:
 	rm -f $(REPORTS_DIR)/design-dir.txt

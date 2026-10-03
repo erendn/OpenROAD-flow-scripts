@@ -145,6 +145,7 @@ configuration file.
 | <a name="ENABLE_DPO"></a>ENABLE_DPO| Enable detail placement with improve_placement feature.| 1|
 | <a name="ENABLE_PLACE_REPAIR_TIMING"></a>ENABLE_PLACE_REPAIR_TIMING| Run repair_timing during the placement resize stage using placement parasitics. Disabled by default; pre-CTS setup/hold repair is skipped unless this is set to 1.| 0|
 | <a name="ENABLE_RESISTANCE_AWARE"></a>ENABLE_RESISTANCE_AWARE| Passed as -resistance_aware to global_route.| |
+| <a name="EXPERIMENT_SETTING"></a>EXPERIMENT_SETTING| Selects one global sizing experiment configuration from the table in global_sizing_experiment.tcl (for example S1-N1). The configuration runs after detailed placement and before that step's metrics are reported, so the detailed-placement metrics record the design after sizing. Unset, the step runs no sizing, as in the default flow. An unknown name is an error.| |
 | <a name="FASTROUTE_TCL"></a>FASTROUTE_TCL| Specifies a Tcl script with commands to run before FastRoute.| |
 | <a name="FILL_CELLS"></a>FILL_CELLS| Fill cells are used to fill empty sites. If not set or empty, fill cell insertion is skipped.| |
 | <a name="FILL_CONFIG"></a>FILL_CONFIG| JSON rule file for metal fill during chip finishing.| |
@@ -156,6 +157,7 @@ configuration file.
 | <a name="GDS_FILES"></a>GDS_FILES| Path to platform GDS files.| |
 | <a name="GENERATE_ARTIFACTS_ON_FAILURE"></a>GENERATE_ARTIFACTS_ON_FAILURE| For instance Bazel needs artifacts (.odb and .rpt files) on a failure to allow the user to save hours on re-running the failed step locally, but when working with a Makefile flow, it is more natural to fail the step and leave the user to manually inspect the logs and artifacts directly via the file system. Set to 1 to change the behavior to generate artifacts upon failure to e.g. do a global route. The exit code will still be non-zero on all other failures that aren't covered by the "useful to inspect the artifacts on failure" use-case. Example: just like detailed routing, a global route that fails with congestion, is not a build failure(as in exit code non-zero), it is a successful(as in zero exit code) global route that produce reports detailing the problem. Detailed route will not proceed, if there is global routing congestion This allows build systems, such as bazel, to create artifacts for global and detailed route, even if the operation had problems, without having know about the semantics between global and detailed route. Considering that global and detailed route can run for a long time and use a lot of memory, this allows inspecting results on a laptop for a build that ran on a server.| 0|
 | <a name="GLOBAL_PLACEMENT_ARGS"></a>GLOBAL_PLACEMENT_ARGS| Use additional tuning parameters during global placement other than default args defined in global_place.tcl.| |
+| <a name="GLOBAL_ROUTE_ALLOW_CONGESTION"></a>GLOBAL_ROUTE_ALLOW_CONGESTION| Passed as -allow_congestion to EVERY global_route call in the stage (the initial route and each -end_incremental re-route). Without it, a design that global routing cannot make congestion-free ENDS THE STAGE with an error (GRT-0116 from the batch route, GRT-0232 from the incremental one), so the run produces no global-route metrics at all -- the congestion is a gate, not a measurement. With it set to 1 both become warnings, the stage finishes, and the congestion that could not be resolved is reported (congestion report files plus the globalroute overflow metrics). Intended for flows that need to MEASURE congestion instead of stopping on it: the guides handed to detailed routing really are congested, and detailed routing may fail on them.| 0|
 | <a name="GLOBAL_ROUTE_ARGS"></a>GLOBAL_ROUTE_ARGS| Replaces default arguments for global route. The -congestion_iterations default is set by the flow (30 for FastRoute, 10 for CUGR); add -congestion_iterations here to override it.| -congestion_report_iter_step 5 -verbose|
 | <a name="GLOBAL_ROUTE_USE_CUGR"></a>GLOBAL_ROUTE_USE_CUGR| Passed as -use_cugr to global_route. Uses CUGR as the global routing solver instead of the default FastRoute solver. NOTE: CUGR is not ready for production.| 0|
 | <a name="GND_NETS_VOLTAGES"></a>GND_NETS_VOLTAGES| Used for IR Drop calculation.| |
@@ -241,6 +243,7 @@ configuration file.
 | <a name="PROCESS"></a>PROCESS| Technology node or process in use.| |
 | <a name="PWR_NETS_VOLTAGES"></a>PWR_NETS_VOLTAGES| Used for IR Drop calculation.| |
 | <a name="RCX_RULES"></a>RCX_RULES| RC Extraction rules file path.| |
+| <a name="RECORD_FLOW_HOST"></a>RECORD_FLOW_HOST| Record the hostname of the machine that RAN THE FLOW as a metric (placeopt__host), so it lands per run in metadata-summary.json. Off by default because it puts a machine name into metadata.json and therefore into any regenerated metadata golden. Intended for setups that run each flow on its own (cloud) machine and summarize elsewhere: genSummary.py otherwise has to fall back to ITS OWN hostname, which answers a different question, and it stamps host.source accordingly ("flow" vs "gensummary"). Useful for grouping runtimes by machine.| 0|
 | <a name="RECOVER_POWER"></a>RECOVER_POWER| Specifies how many percent of paths with positive slacks can be slowed for power savings [0-100].| 0|
 | <a name="REMOVE_ABC_BUFFERS"></a>REMOVE_ABC_BUFFERS (deprecated)| Remove abc buffers from the netlist. If timing repair in floorplanning is taking too long, use a SETUP/HOLD_SLACK_MARGIN to terminate timing repair early instead of using REMOVE_ABC_BUFFERS or set SKIP_LAST_GASP=1.| 0|
 | <a name="REMOVE_CELLS_FOR_LEC"></a>REMOVE_CELLS_FOR_LEC| String patterns directly passed to write_verilog -remove_cells <> for lec checks.| |
@@ -466,6 +469,7 @@ configuration file.
 - [DONT_BUFFER_PORTS](#DONT_BUFFER_PORTS)
 - [EARLY_SIZING_CAP_RATIO](#EARLY_SIZING_CAP_RATIO)
 - [ENABLE_PLACE_REPAIR_TIMING](#ENABLE_PLACE_REPAIR_TIMING)
+- [EXPERIMENT_SETTING](#EXPERIMENT_SETTING)
 - [FLOORPLAN_DEF](#FLOORPLAN_DEF)
 - [GLOBAL_PLACEMENT_ARGS](#GLOBAL_PLACEMENT_ARGS)
 - [GPL_KEEP_OVERFLOW](#GPL_KEEP_OVERFLOW)
@@ -492,6 +496,7 @@ configuration file.
 - [PRE_GLOBAL_PLACE_TCL](#PRE_GLOBAL_PLACE_TCL)
 - [PRE_IO_PLACEMENT_TCL](#PRE_IO_PLACEMENT_TCL)
 - [PRE_RESIZE_TCL](#PRE_RESIZE_TCL)
+- [RECORD_FLOW_HOST](#RECORD_FLOW_HOST)
 - [ROUTING_LAYER_ADJUSTMENT](#ROUTING_LAYER_ADJUSTMENT)
 - [SKIP_REPORT_METRICS](#SKIP_REPORT_METRICS)
 - [TNS_END_PERCENT](#TNS_END_PERCENT)
@@ -532,6 +537,7 @@ configuration file.
 - [CELL_PAD_IN_SITES_DETAIL_PLACEMENT](#CELL_PAD_IN_SITES_DETAIL_PLACEMENT)
 - [DETAILED_METRICS](#DETAILED_METRICS)
 - [ENABLE_RESISTANCE_AWARE](#ENABLE_RESISTANCE_AWARE)
+- [GLOBAL_ROUTE_ALLOW_CONGESTION](#GLOBAL_ROUTE_ALLOW_CONGESTION)
 - [GLOBAL_ROUTE_ARGS](#GLOBAL_ROUTE_ARGS)
 - [GLOBAL_ROUTE_USE_CUGR](#GLOBAL_ROUTE_USE_CUGR)
 - [HOLD_SLACK_MARGIN](#HOLD_SLACK_MARGIN)

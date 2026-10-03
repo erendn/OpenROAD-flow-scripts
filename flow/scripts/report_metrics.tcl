@@ -6,6 +6,57 @@ proc report_puts { out } {
   close $fileId
 }
 
+# Emit the size of the max slew, capacitance and fanout violations: per check,
+# the sum over violating pins of (value - limit) / limit. Unitless, 0 when nothing
+# violates. erc_text is the output of `report_check_types -max_slew
+# -max_capacitance -max_fanout -violators`; with -violators every violating pin
+# is listed (-max_count only applies without it), one row per pin, worst over
+# scenes and rise/fall, so the sums use the same limits as the violation counts.
+# counts maps each check to its STA violation count. A check whose parsed row
+# count differs is warned about and not emitted, so a change in the report
+# layout reads as a missing metric, never as zero.
+proc report_drv_excess_metrics { erc_text counts } {
+  set num {-?[0-9]+(?:\.[0-9]*)?(?:[eE][-+]?[0-9]+)?}
+  # Row: pin limit value slack (VIOLATED). The slack is optional because STA
+  # prints a value of exactly -1 as blank (a fanout slack of -1 does show up
+  # blank). \s+ also spans a line split between a long pin name and its numbers.
+  set row_re "(\\S+)\\s+($num)\\s+($num)(?:\\s+$num)?\\s+\\(VIOLATED\\)"
+  set headers [regexp -all -inline -indices -line \
+    {^max (slew|capacitance|fanout)$} $erc_text]
+  set sums [dict create slew 0.0 capacitance 0.0 fanout 0.0]
+  set rows [dict create slew 0 capacitance 0 fanout 0]
+  set n [llength $headers]
+  for { set i 0 } { $i < $n } { incr i 2 } {
+    set start [expr { [lindex $headers $i 1] + 1 }]
+    set check [string range $erc_text {*}[lindex $headers [expr { $i + 1 }]]]
+    if { $i + 2 < $n } {
+      set end [expr { [lindex $headers [expr { $i + 2 }] 0] - 1 }]
+    } else {
+      set end end
+    }
+    set section [string range $erc_text $start $end]
+    foreach { _ pin limit value } [regexp -all -inline $row_re $section] {
+      if { $limit > 0 } {
+        # double(): fanout rows are integers, and Tcl would divide them as such.
+        set excess [expr { double($value - $limit) / $limit }]
+        dict set sums $check [expr { [dict get $sums $check] + $excess }]
+        dict incr rows $check
+      }
+    }
+  }
+  foreach { check metric } { slew max_slew capacitance max_cap fanout max_fanout } {
+    set count [dict get $counts $check]
+    set parsed [dict get $rows $check]
+    if { $parsed != $count } {
+      utl::warn FLW 25 "max $check: parsed $parsed violating pins from\
+        report_check_types but STA counts $count; timing__drv__${metric}_excess\
+        not emitted."
+      continue
+    }
+    utl::metric_float "timing__drv__${metric}_excess" [dict get $sums $check]
+  }
+}
+
 proc report_metrics { stage when { include_erc true } { include_clock_skew true } } {
   if { $::env(SKIP_REPORT_METRICS) } {
     return
@@ -32,6 +83,8 @@ proc report_metrics { stage when { include_erc true } { include_clock_skew true 
   report_worst_slack >> $filename
   report_worst_slack_metric
   report_worst_slack_metric -hold
+
+  utl::metric_int "timing__path__endpoint__count" [sta::endpoint_count]
 
   report_puts "\n=========================================================================="
   report_puts "$when report_clock_min_period"
@@ -70,7 +123,23 @@ proc report_metrics { stage when { include_erc true } { include_clock_skew true 
     report_puts "\n=========================================================================="
     report_puts "$when report_check_types -max_slew -max_cap -max_fanout -violators"
     report_puts "--------------------------------------------------------------------------"
-    report_check_types -max_slew -max_capacitance -max_fanout -violators >> $filename
+    # Run the check once and keep its text: it goes to the report file as before
+    # and its per-pin rows give the violation sizes (report_drv_excess_metrics).
+    # -digits 6 because the default 2 rounds a slew in ns to 10 ps, too coarse
+    # for (value - limit) / limit.
+    sta::redirect_string_begin
+    set rc [catch {
+      report_check_types -max_slew -max_capacitance -max_fanout -violators -digits 6
+    } msg opts]
+    set erc_text [sta::redirect_string_end]
+    # -digits sets the report digits globally; put the default back.
+    sta::set_report_path_digits $::sta_report_default_digits
+    if { $rc } {
+      return -options $opts $msg
+    }
+    set fileId [open $filename a]
+    puts -nonewline $fileId $erc_text
+    close $fileId
 
     report_erc_metrics
 
@@ -128,17 +197,23 @@ proc report_metrics { stage when { include_erc true } { include_clock_skew true 
     report_puts "\n=========================================================================="
     report_puts "$when max_slew_violation_count"
     report_puts "--------------------------------------------------------------------------"
-    report_puts "max slew violation count [sta::max_slew_violation_count]"
+    set max_slew_count [sta::max_slew_violation_count]
+    report_puts "max slew violation count $max_slew_count"
 
     report_puts "\n=========================================================================="
     report_puts "$when max_fanout_violation_count"
     report_puts "--------------------------------------------------------------------------"
-    report_puts "max fanout violation count [sta::max_fanout_violation_count]"
+    set max_fanout_count [sta::max_fanout_violation_count]
+    report_puts "max fanout violation count $max_fanout_count"
 
     report_puts "\n=========================================================================="
     report_puts "$when max_cap_violation_count"
     report_puts "--------------------------------------------------------------------------"
-    report_puts "max cap violation count [sta::max_capacitance_violation_count]"
+    set max_cap_count [sta::max_capacitance_violation_count]
+    report_puts "max cap violation count $max_cap_count"
+
+    report_drv_excess_metrics $erc_text [dict create slew $max_slew_count \
+      capacitance $max_cap_count fanout $max_fanout_count]
 
     report_puts "\n=========================================================================="
     report_puts "$when setup_violation_count"
